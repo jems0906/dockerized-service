@@ -1,0 +1,160 @@
+name: Build and Deploy Dockerized Service
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+        cache: 'npm'
+    
+    - name: Install dependencies
+      run: npm ci
+    
+    - name: Run tests
+      run: npm test
+
+  build-and-push:
+    runs-on: ubuntu-latest
+    needs: test
+    if: github.event_name == 'push'
+    
+    permissions:
+      contents: read
+      packages: write
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+    
+    - name: Log in to Container Registry
+      uses: docker/login-action@v3
+      with:
+        registry: ${{ env.REGISTRY }}
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+    
+    - name: Extract metadata
+      id: meta
+      uses: docker/metadata-action@v5
+      with:
+        images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+        tags: |
+          type=ref,event=branch
+          type=ref,event=pr
+          type=sha,prefix={{branch}}-
+          type=raw,value=latest,enable={{is_default_branch}}
+    
+    - name: Build and push Docker image
+      uses: docker/build-push-action@v5
+      with:
+        context: .
+        platforms: linux/amd64,linux/arm64
+        push: true
+        tags: ${{ steps.meta.outputs.tags }}
+        labels: ${{ steps.meta.outputs.labels }}
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
+
+  deploy:
+    runs-on: ubuntu-latest
+    needs: build-and-push
+    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
+    
+    steps:
+    - name: Deploy to remote server
+      uses: appleboy/ssh-action@v1.0.0
+      with:
+        host: ${{ secrets.HOST }}
+        username: ${{ secrets.USERNAME }}
+        key: ${{ secrets.PRIVATE_KEY }}
+        port: ${{ secrets.PORT }}
+        script: |
+          # Create deployment directory if it doesn't exist
+          mkdir -p ~/deployment
+          
+          # Set environment variables for deployment
+          export SECRET_MESSAGE="${{ secrets.SECRET_MESSAGE }}"
+          export AUTH_USERNAME="${{ secrets.AUTH_USERNAME }}"
+          export AUTH_PASSWORD="${{ secrets.AUTH_PASSWORD }}"
+          
+          # Stop and remove existing container
+          echo "🛑 Stopping existing container..."
+          docker stop dockerized-service || true
+          docker rm dockerized-service || true
+          
+          # Login to GitHub Container Registry
+          echo "🔐 Logging into GitHub Container Registry..."
+          echo ${{ secrets.GITHUB_TOKEN }} | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+          
+          # Pull latest image
+          echo "⬇️ Pulling latest image..."
+          docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
+          
+          # Run new container
+          echo "🚀 Starting new container..."
+          docker run -d \
+            --name dockerized-service \
+            --restart unless-stopped \
+            -p 80:3000 \
+            -e SECRET_MESSAGE="${{ secrets.SECRET_MESSAGE }}" \
+            -e USERNAME="${{ secrets.AUTH_USERNAME }}" \
+            -e PASSWORD="${{ secrets.AUTH_PASSWORD }}" \
+            -e NODE_ENV=production \
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
+          
+          # Wait for container to start
+          echo "⏳ Waiting for container to start..."
+          sleep 10
+          
+          # Health check
+          echo "🔍 Performing health check..."
+          if curl -f http://localhost/health; then
+            echo "✅ Health check passed"
+          else
+            echo "❌ Health check failed"
+            docker logs dockerized-service
+            exit 1
+          fi
+          
+          # Test endpoints
+          echo "🧪 Testing endpoints..."
+          curl -s http://localhost/ | grep -q "Hello, world!" && echo "✅ Public endpoint working"
+          
+          # Clean up old images
+          echo "🧹 Cleaning up old images..."
+          docker image prune -f
+          
+          # Show container status
+          echo "📊 Container status:"
+          docker ps | grep dockerized-service
+          
+          echo "🎉 Deployment completed successfully!"
+
+    - name: Notify deployment status
+      if: always()
+      run: |
+        if [ "${{ job.status }}" == "success" ]; then
+          echo "✅ Deployment to ${{ secrets.HOST }} completed successfully!"
+        else
+          echo "❌ Deployment to ${{ secrets.HOST }} failed!"
+        fi
