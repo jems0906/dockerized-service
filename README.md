@@ -1,13 +1,14 @@
 # Dockerized Service
 
-Use GitHub Actions to Deploy a Dockerized Node.js Service
+A Dockerized Node.js Service with CI/CD Pipeline
 
 ## Features
 
 - **Node.js Express Server**: Simple REST API with two endpoints
 - **Docker Support**: Fully containerized application
 - **Basic Authentication**: Protected endpoint with username/password auth
-- **CI/CD Pipeline**: Automated building and deployment with GitHub Actions
+- **CI/CD Pipeline**: Automated testing and Docker image building with GitHub Actions
+- **Local Development**: Easy-to-use PowerShell scripts for running locally
 
 ## API Endpoints
 
