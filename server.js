@@ -1,8 +1,10 @@
 const express = require('express');
 const dotenv = require('dotenv');
+const os = require('os');
 
 // Load environment variables
 dotenv.config();
+
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -52,6 +54,11 @@ app.get('/health', (req, res) => {
     res.json({ status: 'healthy', timestamp: new Date().toISOString() });
 });
 
+// Endpoint to get server hostname
+app.get('/hostname', (req, res) => {
+    res.json({ hostname: os.hostname() });
+});
+
 // Error handling middleware
 app.use((err, req, res, next) => {
     console.error(err.stack);
@@ -65,10 +72,20 @@ app.use('*', (req, res) => {
 
 // Only start the server if this file is run directly (not required by tests)
 if (require.main === module) {
-    app.listen(PORT, () => {
+    const server = app.listen(PORT, () => {
         console.log(`Server is running on port ${PORT}`);
         console.log(`Access the service at http://localhost:${PORT}`);
         console.log(`Secret endpoint at http://localhost:${PORT}/secret (requires Basic Auth)`);
+    });
+
+    // Add error handling for EADDRINUSE
+    server.on('error', (err) => {
+        if (err.code === 'EADDRINUSE') {
+            console.error(`Port ${PORT} is already in use. Please stop the other process or use a different port.`);
+            process.exit(1);
+        } else {
+            throw err;
+        }
     });
 }
 

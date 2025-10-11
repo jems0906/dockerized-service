@@ -20,9 +20,9 @@ Use GitHub Actions to Deploy a Dockerized Node.js Service
 
 - Node.js 18 or higher
 - npm
-- Docker
+- Docker (for containerized deployment)
 
-### Setup
+### Option 1: Run with Node.js
 
 1. Install dependencies:
    ```bash
@@ -42,6 +42,43 @@ Use GitHub Actions to Deploy a Dockerized Node.js Service
    ```
 
 The server will run on `http://localhost:3000`
+
+### Option 2: Run with Docker (Recommended)
+
+**Windows PowerShell:**
+```powershell
+.\run-local.ps1
+```
+
+This script will:
+- Build the Docker image
+- Start the container with environment variables
+- Display the service URL and credentials
+
+**To stop the service:**
+```powershell
+.\stop-local.ps1
+```
+
+**Manual Docker commands:**
+```bash
+# Build the image
+docker build -t dockerized-service:local .
+
+# Run the container
+docker run -d --name dockerized-service -p 3000:3000 \
+  -e SECRET_MESSAGE="Your secret" \
+  -e USERNAME="admin" \
+  -e PASSWORD="password123" \
+  dockerized-service:local
+
+# View logs
+docker logs dockerized-service
+
+# Stop and remove
+docker stop dockerized-service
+docker rm dockerized-service
+```
 
 ### Testing the API
 
