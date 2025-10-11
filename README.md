@@ -67,10 +67,11 @@ This script will:
 docker build -t dockerized-service:local .
 
 # Run the container
-docker run -d --name dockerized-service -p 3000:3000 \
+docker run -d --name dockerized-service -p 3001:3001 \
   -e SECRET_MESSAGE="Your secret" \
   -e USERNAME="admin" \
   -e PASSWORD="password123" \
+  -e PORT="3001" \
   dockerized-service:local
 
 # View logs
@@ -81,16 +82,31 @@ docker stop dockerized-service
 docker rm dockerized-service
 ```
 
+> **Note:** The default port is 3001 to avoid conflicts with other services.
+
 ### Testing the API
 
 #### Test public endpoint:
 ```bash
-curl http://localhost:3000
+curl http://localhost:3001
 ```
 
 #### Test protected endpoint:
 ```bash
-curl -u username:password http://localhost:3000/secret
+curl -u admin:password123 http://localhost:3001/secret
+```
+
+**PowerShell example:**
+```powershell
+# Test public endpoint
+Invoke-RestMethod -Uri "http://localhost:3001" -Method Get
+
+# Test protected endpoint
+$pair = "admin:password123"
+$bytes = [System.Text.Encoding]::ASCII.GetBytes($pair)
+$base64 = [System.Convert]::ToBase64String($bytes)
+$headers = @{ Authorization = "Basic $base64" }
+Invoke-RestMethod -Uri "http://localhost:3001/secret" -Method Get -Headers $headers
 ```
 
 ## Docker
@@ -110,43 +126,46 @@ docker run -p 3000:3000 --env-file .env dockerized-service
 docker-compose up -d
 ```
 
-## Deployment
+## CI/CD Pipeline
 
-This project includes automated CI/CD deployment to remote servers using GitHub Actions.
+This project uses GitHub Actions for automated testing and Docker image building.
 
-### GitHub Actions Secrets
+### Workflow Overview
 
-Configure these secrets in your GitHub repository (Settings → Secrets and variables → Actions):
+When you push to the `main` or `master` branch, GitHub Actions will automatically:
 
-#### Server Connection
-- `HOST` - Server IP address
-- `USERNAME` - SSH username
-- `PRIVATE_KEY` - SSH private key content
-- `PORT` - SSH port (usually 22)
+1. **Run Tests** - Execute the test suite with `npm test`
+2. **Build Docker Image** - Build the Docker image for your application
+3. **Push to Registry** - Push the image to GitHub Container Registry (ghcr.io)
 
-#### Application Configuration
-- `SECRET_MESSAGE` - Production secret message
-- `AUTH_USERNAME` - Production username for Basic Auth
-- `AUTH_PASSWORD` - Production password for Basic Auth
+### Accessing Built Images
 
-### Server Setup
-
-On your remote Ubuntu server:
-
-```bash
-# Install Docker
-curl -fsSL https://get.docker.com -o get-docker.sh
-sudo sh get-docker.sh
-sudo usermod -aG docker $USER
-
-# Configure firewall
-sudo ufw enable
-sudo ufw allow ssh
-sudo ufw allow 80
-sudo ufw allow 443
+After a successful workflow run, your Docker image will be available at:
+```
+ghcr.io/jems0906/dockerized-service:latest
 ```
 
-Push to the main branch to trigger deployment.
+You can pull and run it:
+```bash
+# Pull the image from GitHub Container Registry
+docker pull ghcr.io/jems0906/dockerized-service:latest
+
+# Run the image
+docker run -d -p 3001:3001 \
+  -e SECRET_MESSAGE="Your secret" \
+  -e USERNAME="admin" \
+  -e PASSWORD="password123" \
+  -e PORT="3001" \
+  ghcr.io/jems0906/dockerized-service:latest
+```
+
+### GitHub Actions Workflow
+
+The workflow automatically runs on:
+- Push to `main` or `master` branches
+- Pull requests to `main` or `master` branches
+
+No additional secrets or configuration needed for basic CI/CD!
 
 ## Project Structure
 
@@ -164,6 +183,8 @@ Push to the main branch to trigger deployment.
 ├── docker-compose.yml        # Docker Compose configuration
 ├── Dockerfile                # Docker image configuration
 ├── package.json              # Node.js dependencies and scripts
+├── run-local.ps1             # PowerShell script to run locally
+├── stop-local.ps1            # PowerShell script to stop service
 ├── server.js                 # Main application file
 └── README.md                 # This file
 ```
